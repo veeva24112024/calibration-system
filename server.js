@@ -7,26 +7,30 @@ const path = require('path');
 const cors = require('cors');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000; // เปลี่ยนเป็น 10000 ถ้า Render ระบุ
 
 // ตั้งค่า AWS S3 โดยกำหนดค่าตรง
 aws.config.update({
   accessKeyId: 'AKIAU76LUE6NWD4V4G4G',
   secretAccessKey: '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',
-  region: 'us-east-1' // ตรวจสอบว่า Region ตรงกับ Bucket
+  region: 'us-east-1' // เปลี่ยนเป็น Region ของ Bucket ถ้าไม่ตรง
 });
 const s3 = new aws.S3();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static('public')); // เปลี่ยนชื่อโฟลเดอร์ถ้าไม่ใช่ 'public'
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
+});
 
 // Multer Configuration for S3 Uploads
 const upload = multer({
   storage: multerS3({
     s3: s3,
-    bucket: 'calibrationimages1234', // ใช้ชื่อ Bucket ใหม่
+    bucket: 'calibrationimages1234', // ตรวจสอบชื่อ Bucket
     acl: 'public-read',
     key: (req, file, cb) => {
       cb(null, `${Date.now()}-${file.originalname}`);
@@ -42,7 +46,7 @@ const upload = multer({
 });
 
 // กำหนด MONGODB_URI โดยตรง
-const uri = "mongodb+srv://Cluster26511:HPRRNaLTlwZAgL37@cluster26511.ugyjyqg.mongodb.net/calibrationDB?retryWrites=true&w=majority&appName=Cluster26511";
+const uri = "mongodb+srv://Cluster26511:HPRRNaLTlwZAgL37@cluster26511.ugyjyqg.mongodb.net/calibrationDB?retryWrites=true&w=majority&appName=Cluster26511"; // ตรวจสอบ URI
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
