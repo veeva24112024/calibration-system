@@ -1,42 +1,41 @@
 const express = require('express');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const multer = require('multer');
+const multerS3 = require('multer-s3');
+const aws = require('aws-sdk');
 const path = require('path');
 const cors = require('cors');
 
-// เพิ่ม dotenv
-require('dotenv').config();
-
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000; // เปลี่ยนเป็น 10000 ถ้า Render ระบุ
 
-// ใช้ URI จาก .env
-const uri = process.env.MONGODB_URI || "mongodb+srv://Cluster26511:HPRRNaLTlwZAgL37@cluster26511.ugyjyqg.mongodb.net/?retryWrites=true&w=majority&appName=Cluster26511";
-const client = new MongoClient(uri, {
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  }
+// ตั้งค่า AWS S3 โดยกำหนดค่าตรง
+aws.config.update({
+  accessKeyId: 'AKIAU76LUE6NWD4V4G4G',
+  secretAccessKey: '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',
+  region: 'us-east-1' // เปลี่ยนเป็น Region ของ Bucket ถ้าไม่ตรง
 });
-
-let db; // ตัวแปรสำหรับเก็บการเชื่อมต่อฐานข้อมูล
+const s3 = new aws.S3();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static('uploads'));
-app.use(express.static('public'));
-
-// Multer Configuration for Image Uploads
-const storage = multer.diskStorage({
-  destination: './uploads/',
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
-  }
+app.use(express.static('public')); // เปลี่ยนชื่อโฟลเดอร์ถ้าไม่ใช่ 'public'
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
 });
+
+// Multer Configuration for S3 Uploads
 const upload = multer({
-  storage,
+  storage: multerS3({
+    s3: s3,
+    bucket: 'calibrationimages1234', // ตรวจสอบชื่อ Bucket
+    acl: 'public-read',
+    key: (req, file, cb) => {
+      cb(null, `${Date.now()}-${file.originalname}`);
+    }
+  }),
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
@@ -46,19 +45,31 @@ const upload = multer({
   }
 });
 
-// Connect to MongoDB
+// กำหนด MONGODB_URI โดยตรง
+const uri = "mongodb+srv://Cluster26511:HPRRNaLTlwZAgL37@cluster26511.ugyjyqg.mongodb.net/calibrationDB?retryWrites=true&w=majority&appName=Cluster26511"; // ตรวจสอบ URI
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  }
+});
+
+let db;
+
 async function connectDB() {
   try {
     await client.connect();
-    db = client.db('calibrationDB'); // ใช้ชื่อฐานข้อมูล calibrationDB
-    console.log("Connected to MongoDB!");
+    db = client.db('calibrationDB');
+    await db.command({ ping: 1 });
+    console.log("Connected to MongoDB at", new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }));
+    console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } catch (err) {
-    console.error('MongoDB connection error:', err);
+    console.error('MongoDB connection error at', new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }), ':', err.message);
+    process.exit(1);
   }
 }
 
-// API Endpoints
-// ดึงข้อมูลทั้งหมด
 app.get('/api/records', async (req, res) => {
   try {
     const records = await db.collection('records').find().sort({ date: -1 }).toArray();
@@ -68,7 +79,6 @@ app.get('/api/records', async (req, res) => {
   }
 });
 
-// เพิ่มข้อมูลใหม่
 app.post('/api/records', upload.single('image'), async (req, res) => {
   try {
     const { machine, volume, date, status, timestamp } = req.body;
@@ -78,17 +88,16 @@ app.post('/api/records', upload.single('image'), async (req, res) => {
       date: new Date(date),
       status,
       timestamp,
-      image: req.file ? `/uploads/${req.file.filename}` : null
+      image: req.file ? req.file.location : null
     };
     const result = await db.collection('records').insertOne(record);
-    record._id = result.insertedId; // เพิ่ม _id ให้กับ record เพื่อส่งกลับ
+    record._id = result.insertedId;
     res.status(201).json(record);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ลบข้อมูล
 app.delete('/api/records/:id', async (req, res) => {
   try {
     const result = await db.collection('records').deleteOne({ _id: new ObjectId(req.params.id) });
@@ -99,15 +108,13 @@ app.delete('/api/records/:id', async (req, res) => {
   }
 });
 
-// เริ่มเซิร์ฟเวอร์
 app.listen(PORT, async () => {
   await connectDB();
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT} at ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}`);
 });
 
-// ปิดการเชื่อมต่อเมื่อเซิร์ฟเวอร์หยุดทำงาน
 process.on('SIGINT', async () => {
   await client.close();
-  console.log('MongoDB connection closed');
+  console.log('MongoDB connection closed at', new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }));
   process.exit(0);
 });
